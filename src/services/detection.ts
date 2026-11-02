@@ -37,6 +37,19 @@ const accelMag = (s: Sample) =>
 const gyroMag = (s: Sample) =>
   s.gx != null && s.gy != null && s.gz != null ? Math.hypot(s.gx, s.gy, s.gz) : null;
 
+// Newer watch firmware samples the IMU at 50 Hz and sends a per-second summary
+// (AMAX, ASTD, GMAX). Use it when present; otherwise fall back to the one instant
+// sample per packet.
+
+/** Largest deviation of |a| from 1 g seen in this sample's second. */
+const accelPeakDev = (s: Sample) => {
+  if (s.amax != null) return Math.abs(s.amax - G);
+  const m = accelMag(s);
+  return m == null ? null : Math.abs(m - G);
+};
+/** Strongest rotation seen in this sample's second. */
+const gyroPeak = (s: Sample) => s.gmax ?? gyroMag(s);
+
 function stdDev(xs: number[]): number {
   if (xs.length < 2) return 0;
   const m = xs.reduce((a, b) => a + b, 0) / xs.length;
@@ -51,13 +64,23 @@ function vectorSpread(xs: Sample[]): number | null {
 }
 
 /**
+ * How much the wrist moved over these samples. With ASTD on every sample, the worst
+ * second counts (each second must be still); otherwise the spread of the instant values.
+ */
+function movement(xs: Sample[]): number | null {
+  if (xs.length >= 2 && xs.every((s) => s.astd != null)) return Math.max(...xs.map((s) => s.astd!));
+  return vectorSpread(xs);
+}
+
+/**
  * Threshold rules (literature-style baseline, see proposal Table 1):
  *  - bpm:      valid heart rate outside [bpmLow, bpmHigh] continuously for N seconds
  *  - spike:    |a| jumps ≥ accelSpike away from 1 g, then the acceleration vector barely changes for ≥ stillSeconds
  *  - gyro:     |ω| above gyroErratic in ≥ gyroCount of the last gyroWindow samples
  * One rule → "warning" (possible drowning); two or more → "drowning".
  *
- * Note: the watch sends one IMU sample per second, so short spikes between samples are missed.
+ * With the 50 Hz firmware the rules use AMAX / ASTD / GMAX (peaks and spread within each second);
+ * with the older firmware only one instant IMU sample per second exists, so short spikes can be missed.
  */
 export class ThresholdDetector implements Detector {
   readonly name = 'Threshold rules';
@@ -103,8 +126,8 @@ export class ThresholdDetector implements Detector {
     const recent = history.filter((s) => s.t >= windowStart);
     let spikeIdx = -1;
     for (let i = recent.length - 1; i >= 0; i--) {
-      const m = accelMag(recent[i]);
-      if (m != null && Math.abs(m - G) >= c.accelSpikeMs2) {
+      const dev = accelPeakDev(recent[i]);
+      if (dev != null && dev >= c.accelSpikeMs2) {
         spikeIdx = i;
         break;
       }
@@ -112,7 +135,7 @@ export class ThresholdDetector implements Detector {
     if (spikeIdx >= 0) {
       const after = recent.slice(spikeIdx + 1);
       const span = after.length ? (after[after.length - 1].t - recent[spikeIdx].t) / 1000 : 0;
-      const spread = vectorSpread(after);
+      const spread = movement(after);
       if (span >= c.stillSeconds && spread != null && spread < c.stillStdDevMs2) {
         rules.push('spike');
         reasons.push(`Violent movement then almost no motion for ${Math.round(span)} s`);
@@ -122,7 +145,7 @@ export class ThresholdDetector implements Detector {
     // ---- erratic gyro
     const last = history.slice(-c.gyroWindow);
     const hits = last.filter((s) => {
-      const g = gyroMag(s);
+      const g = gyroPeak(s);
       return g != null && g > c.gyroErraticDps;
     }).length;
     if (last.length >= c.gyroWindow && hits >= c.gyroCount) {

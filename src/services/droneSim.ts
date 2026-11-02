@@ -3,6 +3,7 @@
 // It is a kinematic toy (constant speeds), not a flight model.
 
 import { destination, distanceM, bearingDeg } from '../geo';
+import { addStatusText, resetDrone, updateDrone } from '../store/live';
 import { useStore } from '../store/useStore';
 import type { DroneCommand, FlightMode } from './droneCommands';
 
@@ -50,11 +51,11 @@ const MODE_NUM: Record<FlightMode, number> = {
 };
 
 function say(text: string, severity = 6) {
-  useStore.getState().addStatusText(severity, `SIM: ${text}`);
+  addStatusText(severity, `SIM: ${text}`);
 }
 
 function publish() {
-  useStore.getState().updateDrone({
+  updateDrone({
     sysid: 1,
     armed: v.armed,
     mode: v.mode,
@@ -129,7 +130,7 @@ export function startDroneSim(): void {
   v.target = null;
   v.takeoffAlt = null;
   v.battery = 100;
-  useStore.getState().resetDrone();
+  resetDrone();
   useStore.getState().setDroneLink({ wsConnected: true, mavlinkSeen: true });
   say('Simulated vehicle ready (STABILIZE, disarmed)');
   v.timer = window.setInterval(step, TICK_MS);
@@ -138,7 +139,7 @@ export function startDroneSim(): void {
 export function stopDroneSim(): void {
   if (v.timer != null) window.clearInterval(v.timer);
   v.timer = null;
-  useStore.getState().resetDrone();
+  resetDrone();
   useStore.getState().setDroneLink({ wsConnected: false, mavlinkSeen: false });
 }
 

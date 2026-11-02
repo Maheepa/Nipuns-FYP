@@ -13,6 +13,9 @@ function s(i: number, over: Partial<Sample> = {}): Sample {
     gx: 2,
     gy: 1,
     gz: 0.5,
+    amax: null,
+    astd: null,
+    gmax: null,
     bpm: 80,
     conf: 95,
     stat: 3,
@@ -85,5 +88,35 @@ describe('ThresholdDetector', () => {
     const r = run(xs);
     expect(r.level).toBe('drowning');
     expect(r.reasons.length).toBe(2);
+  });
+
+  describe('with the 50 Hz per-second summary (AMAX / ASTD / GMAX)', () => {
+    it('finds a spike that only shows in AMAX', () => {
+      // Instant values look calm; the peak happened between packets.
+      const xs = [
+        ...Array.from({ length: 3 }, (_, i) => s(i, { amax: 10, astd: 0.6, gmax: 20 })),
+        s(3, { amax: 38, astd: 9, gmax: 300 }),
+        ...Array.from({ length: 7 }, (_, i) => s(4 + i, { amax: 9.9, astd: 0.1, gmax: 3 })),
+      ];
+      expect(run(xs).rules).toContain('spike');
+    });
+
+    it('uses ASTD for stillness: one restless second breaks it', () => {
+      const xs = [
+        s(0, { amax: 38, astd: 9, gmax: 300 }),
+        ...Array.from({ length: 7 }, (_, i) => s(1 + i, { amax: 10, astd: i === 3 ? 2.5 : 0.1, gmax: 5 })),
+      ];
+      expect(run(xs).rules).not.toContain('spike');
+    });
+
+    it('uses GMAX for erratic rotation even when the instant gyro is calm', () => {
+      const xs = Array.from({ length: 6 }, (_, i) => s(i, { amax: 15, astd: 3, gmax: 320 }));
+      expect(run(xs).rules).toContain('gyro');
+    });
+
+    it('a calm AMAX overrides a noisy instant sample', () => {
+      const xs = Array.from({ length: 10 }, (_, i) => s(i, { ax: 30, az: 20, amax: 10.2, astd: 0.2, gmax: 4 }));
+      expect(run(xs).rules).not.toContain('spike');
+    });
   });
 });

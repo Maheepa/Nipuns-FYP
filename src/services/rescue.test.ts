@@ -6,6 +6,7 @@ beforeAll(() => {
 });
 
 import { destination, distanceM } from '../geo';
+import { live } from '../store/live';
 import { useStore } from '../store/useStore';
 import { startDroneSim, stopDroneSim } from './droneSim';
 import { dispatchDrone, initRescueTracker, releaseRing, returnToLaunch, runCommands } from './rescue';
@@ -37,8 +38,8 @@ describe('rescue flow against the simulated drone', () => {
     useStore.setState((s) => ({ settings: { ...s.settings, dryRun: true } }));
     expect(await runCommands('Test', [{ type: 'setMode', mode: 'GUIDED' }, { type: 'arm' }])).toBe('dry-run');
     vi.advanceTimersByTime(1000);
-    expect(st().drone.armed).toBe(false);
-    expect(st().drone.mode).toBe('STABILIZE');
+    expect(live.drone.armed).toBe(false);
+    expect(live.drone.mode).toBe('STABILIZE');
     expect(st().events.filter((e) => e.kind === 'dry-run')).toHaveLength(2);
   });
 
@@ -58,8 +59,8 @@ describe('rescue flow against the simulated drone', () => {
     // Operator arms and takes off explicitly — nothing arms automatically.
     await runCommands('Prep', [{ type: 'setMode', mode: 'GUIDED' }, { type: 'arm' }, { type: 'takeoff', altM: 10 }]);
     vi.advanceTimersByTime(6000);
-    expect(st().drone.armed).toBe(true);
-    expect(st().drone.relAltM).toBeGreaterThan(9);
+    expect(live.drone.armed).toBe(true);
+    expect(live.drone.relAltM).toBeGreaterThan(9);
 
     await dispatchDrone(victim);
     expect(st().rescue.stage).toBe('dispatched');
@@ -68,7 +69,7 @@ describe('rescue flow against the simulated drone', () => {
 
     vi.advanceTimersByTime(15000);
     expect(st().rescue.stage).toBe('ontarget');
-    expect(distanceM(st().drone.position!, victim)).toBeLessThanOrEqual(st().settings.rescue.onTargetRadiusM);
+    expect(distanceM(live.drone.position!, victim)).toBeLessThanOrEqual(st().settings.rescue.onTargetRadiusM);
 
     await releaseRing();
     expect(st().rescue.stage).toBe('delivered');
@@ -76,7 +77,7 @@ describe('rescue flow against the simulated drone', () => {
     await returnToLaunch();
     expect(st().rescue.stage).toBe('returning');
     vi.advanceTimersByTime(40000);
-    expect(st().drone.armed).toBe(false);
+    expect(live.drone.armed).toBe(false);
     expect(st().rescue.stage).toBe('alert'); // rescue finished; the alert itself is still open until cleared
     expect(st().events.map((e) => e.message).join('\n')).toMatch(/rescue complete/);
   });

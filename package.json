@@ -5,10 +5,10 @@
   "type": "module",
   "description": "Base-station web app: wearable drowning detection with autonomous drone rescue",
   "scripts": {
-    "dev": "concurrently -n web,bridge -c cyan,magenta \"npm:dev:web\" \"npm:bridge\"",
+    "dev": "concurrently -n web,bridge -c cyan.bold,magenta.bold \"npm:dev:web\" \"npm:dev:bridge\"",
     "dev:web": "vite",
-    "bridge": "node bridge/server.js",
-    "fake-vehicle": "node bridge/fake-vehicle.js",
+    "dev:bridge": "node bridge/server.js",
+    "sim:drone": "node bridge/fake-vehicle.js",
     "bridge:smoke": "node bridge/smoke-test.js",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",

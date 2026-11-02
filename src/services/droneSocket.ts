@@ -2,6 +2,7 @@
 // Telemetry is merged into the store; commands return a promise with the bridge's verdict.
 
 import { config } from '../config';
+import { addStatusText, updateDrone } from '../store/live';
 import { useStore } from '../store/useStore';
 import type { DroneState } from '../types';
 import type { DroneCommand } from './droneCommands';
@@ -47,10 +48,10 @@ function handle(msg: { type: string; [k: string]: unknown }) {
       if (!simulating()) st.setDroneLink({ mavlinkSeen: Boolean(msg.mavlinkSeen) });
       break;
     case 'telemetry':
-      if (!simulating()) st.updateDrone(msg.patch as Partial<DroneState>);
+      if (!simulating()) updateDrone(msg.patch as Partial<DroneState>);
       break;
     case 'statustext':
-      if (!simulating()) st.addStatusText(msg.severity as number, msg.text as string, msg.t as number);
+      if (!simulating()) addStatusText(msg.severity as number, msg.text as string, msg.t as number);
       break;
     case 'ack': {
       const a = msg as unknown as BridgeAck;
@@ -108,7 +109,7 @@ function schedule() {
   retry = window.setTimeout(() => {
     retry = null;
     open();
-  }, 2000);
+  }, config.bridge.reconnectMs);
 }
 
 /** Connect (and keep reconnecting) to the bridge. Returns a stop function. */

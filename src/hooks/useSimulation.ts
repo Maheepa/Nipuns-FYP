@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { resetWatch } from '../store/live';
 import { useStore } from '../store/useStore';
 import { startSimulator, stopSimulator } from '../services/simulator';
 import { startDroneSim, stopDroneSim } from '../services/droneSim';
@@ -9,15 +10,15 @@ export function useSimulation(): void {
   const simulate = useStore((s) => s.settings.simulate);
   useEffect(() => {
     if (!simulate) return;
-    const { resetTelemetry, setLink, setDroneLink } = useStore.getState();
-    resetTelemetry();
+    const { setLink, setDroneLink } = useStore.getState();
+    resetWatch();
     startSimulator();
     startDroneSim();
     return () => {
       stopSimulator();
       stopDroneSim();
       setDroneLink({ wsConnected: bridgeConnected() });
-      resetTelemetry();
+      resetWatch();
       setLink({ receiverReady: null, lastHbAt: null });
     };
   }, [simulate]);

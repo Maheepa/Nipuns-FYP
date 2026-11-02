@@ -2,7 +2,7 @@
 // laptop with no drone: streams ArduCopter-like telemetry to the bridge over UDP and
 // prints every command the bridge sends back.
 //
-//   node bridge/fake-vehicle.js            (start the bridge first: npm run bridge)
+//   node bridge/fake-vehicle.js            (start the bridge first: npm run dev:bridge)
 
 import dgram from 'node:dgram';
 import { MavlinkParser, encodeV1 } from './mavlink.js';

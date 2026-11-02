@@ -55,8 +55,10 @@ export const config = {
   // ---------------------------------------------------------------- drone bridge
   bridge: {
     wsUrl: 'ws://localhost:8787',
-    /** No MAVLink message for this long → "no data". */
-    telemetryTimeoutMs: 5_000,
+    /** WebSocket open but no MAVLink for this long → "No data". */
+    telemetryTimeoutMs: 3_000,
+    /** Retry the WebSocket this often while the bridge is offline. */
+    reconnectMs: 3_000,
   },
 
   // ---------------------------------------------------------------- rescue (ASSUMED defaults — editable in Settings)

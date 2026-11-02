@@ -64,6 +64,56 @@ function r2(v: number) {
   return v.toFixed(2);
 }
 
+const IMU_HZ = 50;
+type Imu = [number, number, number, number, number, number];
+
+/** One IMU reading (m/s², °/s) at time t seconds; gravity mostly on Z for a wrist floating face-up. */
+function imuSample(sc: SimScenario, t: number): Imu {
+  if (sc === 'struggling') {
+    // a few violent jerks per second on top of strong thrashing
+    const spike = Math.random() < 0.05 ? rand(15, 32) : 0;
+    return [
+      gauss() * 8 + (Math.random() < 0.5 ? spike : -spike),
+      gauss() * 8,
+      9.81 + gauss() * 9,
+      gauss() * 260,
+      gauss() * 260,
+      gauss() * 200,
+    ];
+  }
+  if (sc === 'motionless') {
+    return [0.3 + gauss() * 0.05, -1.2 + gauss() * 0.05, 9.7 + gauss() * 0.05, gauss() * 0.6, gauss() * 0.6, gauss() * 0.6];
+  }
+  // swimming stroke: periodic arm motion
+  return [
+    4 * Math.sin(t * 1.7) + gauss() * 1.2,
+    -1.5 + 2.5 * Math.cos(t * 1.7) + gauss() * 1.0,
+    9.5 + gauss() * 1.5,
+    60 * Math.sin(t * 1.7 + 1) + gauss() * 10,
+    40 * Math.cos(t * 1.7) + gauss() * 10,
+    gauss() * 15,
+  ];
+}
+
+/** Same maths as the proposed firmware: peak |a|, acceleration-vector spread, peak |ω|. */
+export function summarise(window: Imu[]): { amax: number; astd: number; gmax: number } {
+  let amax = 0;
+  let gmax = 0;
+  const sum = [0, 0, 0];
+  const sq = [0, 0, 0];
+  for (const [ax, ay, az, gx, gy, gz] of window) {
+    amax = Math.max(amax, Math.hypot(ax, ay, az));
+    gmax = Math.max(gmax, Math.hypot(gx, gy, gz));
+    [ax, ay, az].forEach((v, i) => {
+      sum[i] += v;
+      sq[i] += v * v;
+    });
+  }
+  const n = window.length;
+  const variance = sum.reduce((acc, s, i) => acc + Math.max(0, sq[i] / n - (s / n) ** 2), 0);
+  return { amax, astd: Math.sqrt(variance), gmax };
+}
+
 export function generatePacket(type: 'DATA' | 'ALERT'): string {
   const sc = sim.scenario;
 
@@ -77,33 +127,12 @@ export function generatePacket(type: 'DATA' | 'ALERT'): string {
   // The MAX32664 in MODE_ONE was observed reporting SpO2 0 on the real watch (slide 26).
   const spo2 = 0;
 
-  // ---- IMU (m/s², °/s); gravity mostly on Z for a wrist floating face-up
-  let ax: number, ay: number, az: number, gx: number, gy: number, gz: number;
-  if (sc === 'struggling') {
-    const spike = Math.random() < 0.35 ? rand(12, 30) : 0;
-    ax = gauss() * 8 + (Math.random() < 0.5 ? spike : -spike);
-    ay = gauss() * 8;
-    az = 9.81 + gauss() * 9;
-    gx = gauss() * 260;
-    gy = gauss() * 260;
-    gz = gauss() * 200;
-  } else if (sc === 'motionless') {
-    ax = 0.3 + gauss() * 0.05;
-    ay = -1.2 + gauss() * 0.05;
-    az = 9.7 + gauss() * 0.05;
-    gx = gauss() * 0.6;
-    gy = gauss() * 0.6;
-    gz = gauss() * 0.6;
-  } else {
-    // swimming stroke: periodic arm motion
-    const ph = (Date.now() - sim.t0) / 1000;
-    ax = 4 * Math.sin(ph * 1.7) + gauss() * 1.2;
-    ay = -1.5 + 2.5 * Math.cos(ph * 1.7) + gauss() * 1.0;
-    az = 9.5 + gauss() * 1.5;
-    gx = 60 * Math.sin(ph * 1.7 + 1) + gauss() * 10;
-    gy = 40 * Math.cos(ph * 1.7) + gauss() * 10;
-    gz = gauss() * 15;
-  }
+  // ---- IMU: 50 samples over the last second, like the 50 Hz watch firmware.
+  // AX..GZ are the newest sample; AMAX/ASTD/GMAX summarise the whole second.
+  const t1 = (Date.now() - sim.t0) / 1000;
+  const window = Array.from({ length: IMU_HZ }, (_, i) => imuSample(sc, t1 - (IMU_HZ - 1 - i) / IMU_HZ));
+  const [ax, ay, az, gx, gy, gz] = window[window.length - 1];
+  const { amax, astd, gmax } = summarise(window);
 
   // ---- position: slow random walk, kept within ~120 m of the base station
   const base = useStore.getState().settings.baseStation;
@@ -122,7 +151,8 @@ export function generatePacket(type: 'DATA' | 'ALERT'): string {
   return (
     `${type}|BPM:${bpm}|SPO2:${spo2}|CONF:${conf}` +
     `|AX:${r2(ax)}|AY:${r2(ay)}|AZ:${r2(az)}|GX:${r2(gx)}|GY:${r2(gy)}|GZ:${r2(gz)}` +
-    `|${gps}|STAT:${stat}`
+    `|${gps}|STAT:${stat}` +
+    `|AMAX:${r2(amax)}|ASTD:${r2(astd)}|GMAX:${r2(gmax)}|N:${IMU_HZ}`
   );
 }
 

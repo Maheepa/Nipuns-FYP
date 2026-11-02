@@ -1,5 +1,7 @@
 import { fmt } from '../format';
-import { useStore } from '../store/useStore';
+import { useMemo } from 'react';
+import { live, recentSamples } from '../store/live';
+import { useFrame } from '../store/ticker';
 import { TimeChart, type Series } from './TimeChart';
 
 const ACCEL: Series[] = [
@@ -28,8 +30,11 @@ function AxisValues({ series, values }: { series: Series[]; values: (number | nu
 }
 
 export function MpuPanel() {
-  const samples = useStore((s) => s.watch.samples);
-  const p = useStore((s) => s.watch.latest);
+  useFrame(8);
+  const version = live.samples.version;
+  // Charts only get a new array when a packet arrived; the 8 Hz tick alone does not redraw them.
+  const samples = useMemo(() => recentSamples(), [version]);
+  const p = live.watch.latest;
   const mag = p && p.ax != null && p.ay != null && p.az != null ? Math.hypot(p.ax, p.ay, p.az) : null;
 
   return (

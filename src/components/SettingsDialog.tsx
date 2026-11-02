@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { config, type RescueSettings } from '../config';
 import { useStore } from '../store/useStore';
-import { useUi } from '../store/useUi';
+import { askConfirm, useUi } from '../store/useUi';
 
 const FIELDS: { key: keyof RescueSettings; label: string; unit: string; min: number; max: number; step: number; int?: boolean }[] = [
   { key: 'altitudeM', label: 'Rescue altitude (above home)', unit: 'm', min: 2, max: 40, step: 0.5 },
@@ -18,6 +18,9 @@ export function SettingsDialog() {
   const setOpen = useUi((s) => s.setSettingsOpen);
   const current = useStore((s) => s.settings.rescue);
   const save = useStore((s) => s.setRescueSettings);
+  const base = useStore((s) => s.settings.baseStation);
+  const setBaseStation = useStore((s) => s.setBaseStation);
+  const isDefaultBase = base.lat === config.baseStation.lat && base.lng === config.baseStation.lng;
   const [draft, setDraft] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -60,6 +63,37 @@ export function SettingsDialog() {
               {errors[f.key] && <small>{errors[f.key]}</small>}
             </label>
           ))}
+        </div>
+        <div className="modal-body base-row">
+          <div>
+            <b>Base station</b>
+            <div className="mono">
+              {base.lat.toFixed(7)}, {base.lng.toFixed(7)} {isDefaultBase ? '(default from config.ts)' : '(set on the map)'}
+            </div>
+          </div>
+          <button
+            className="btn secondary"
+            disabled={isDefaultBase}
+            onClick={async () => {
+              const d = config.baseStation;
+              const ok = await askConfirm({
+                title: 'Reset the base station to the default?',
+                confirmLabel: 'Reset base station',
+                body: (
+                  <p>
+                    Moves the base station back to <b className="mono">{d.lat.toFixed(7)}, {d.lng.toFixed(7)}</b> from
+                    src/config.ts and re-centres the map.
+                  </p>
+                ),
+              });
+              if (ok) {
+                setBaseStation(null);
+                useStore.getState().logEvent({ kind: 'info', message: 'Base station reset to the config.ts default', lat: d.lat, lng: d.lng });
+              }
+            }}
+          >
+            Reset base station to default
+          </button>
         </div>
         <div className="modal-foot">
           <button className="btn secondary" onClick={() => setDraft(Object.fromEntries(FIELDS.map((f) => [f.key, String(config.rescue[f.key])])))}>

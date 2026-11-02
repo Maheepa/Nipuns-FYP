@@ -5,6 +5,7 @@
 // next open() throws "port is already open".
 
 import { config } from '../config';
+import { countBad } from '../store/live';
 import { useStore } from '../store/useStore';
 import { handleSerialLine } from './telemetry';
 
@@ -74,7 +75,7 @@ async function readAll(p: SerialPort): Promise<void> {
         break;
       }
       // non-fatal (e.g. buffer overrun): count it and keep reading on the new readable
-      if (!closing) useStore.getState().countBad();
+      if (!closing) countBad();
     } finally {
       try {
         reader?.releaseLock();
@@ -154,13 +155,13 @@ export async function connectLora(): Promise<void> {
 
   port = p;
   p.addEventListener('disconnect', onPortDisconnect);
-  setLink({ status: 'connected' });
+  setLink({ status: 'connected', connectedAt: Date.now() });
   logLink('LoRa receiver connected (115200 baud)');
   readLoop = readAll(p);
 }
 
 export async function disconnectLora(): Promise<void> {
   await teardown();
-  setLink({ status: 'disconnected', error: null, receiverReady: null, lastHbAt: null });
+  setLink({ status: 'disconnected', error: null, receiverReady: null, lastHbAt: null, connectedAt: null });
   logLink('LoRa receiver disconnected');
 }

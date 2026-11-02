@@ -1,9 +1,11 @@
 import type { ReactNode } from 'react';
 import { distanceM } from '../geo';
-import { clock, metres } from '../format';
-import { useNow } from '../hooks/useNow';
+import { clock, fmt, metres } from '../format';
 import { acknowledgeAlert, clearAlert } from '../services/alerts';
-import { useStore, validBpm } from '../store/useStore';
+import { live, validBpm } from '../store/live';
+import { useFrame } from '../store/ticker';
+import { useStore } from '../store/useStore';
+import { MuteButton } from './Header';
 import type { RescueStage } from '../types';
 
 const STEPS: { stage: RescueStage; label: string }[] = [
@@ -17,10 +19,14 @@ const STEPS: { stage: RescueStage; label: string }[] = [
 // 'released' is shown as part of the "delivered" step.
 const ORDER: RescueStage[] = ['idle', 'alert', 'dispatched', 'enroute', 'ontarget', 'released', 'delivered', 'returning'];
 
-function since(t: number, now: number) {
-  const s = Math.max(0, Math.floor((now - t) / 1000));
+function mmss(seconds: number) {
+  const s = Math.max(0, Math.round(seconds));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
+const since = (t: number, now: number) => mmss((now - t) / 1000);
+
+/** Below this ground speed an arrival estimate is meaningless. */
+const MIN_ETA_SPEED = 0.5;
 
 interface Props {
   /** Rescue / drone buttons, rendered on the right of the banner. */
@@ -29,14 +35,14 @@ interface Props {
 
 /** Full-width alert banner with the rescue progress, shown during an alert or an active rescue. */
 export function AlertBanner({ actions }: Props) {
-  const now = useNow(500);
+  const now = useFrame(4);
   const alert = useStore((s) => s.alert);
   const rescue = useStore((s) => s.rescue);
   const base = useStore((s) => s.settings.baseStation);
-  const watchPos = useStore((s) => s.watch.position);
-  const stale = useStore((s) => s.watch.positionStale);
-  const latest = useStore((s) => s.watch.latest);
-  const drone = useStore((s) => s.drone);
+  const watchPos = live.watch.position;
+  const stale = live.watch.positionStale;
+  const latest = live.watch.latest;
+  const drone = live.drone;
   const onTargetM = useStore((s) => s.settings.rescue.onTargetRadiusM);
 
   if (!alert && rescue.stage === 'idle') return null;
@@ -51,8 +57,11 @@ export function AlertBanner({ actions }: Props) {
       : 'POSSIBLE DROWNING · automatic detection';
 
   const bpm = latest ? validBpm(latest) : null;
-  const target = rescue.target ?? watchPos;
-  const droneToTarget = drone.position && target ? distanceM(drone.position, target) : null;
+  const victim = watchPos ?? rescue.target;
+  const droneToVictim = drone.position && victim ? distanceM(drone.position, victim) : null;
+  const flying = rescue.stage === 'dispatched' || rescue.stage === 'enroute' || rescue.stage === 'ontarget';
+  const gs = drone.groundSpeed;
+  const eta = droneToVictim != null && gs != null && gs >= MIN_ETA_SPEED ? mmss(droneToVictim / gs) : '—';
   const stageIdx = ORDER.indexOf(rescue.stage === 'released' ? 'delivered' : rescue.stage);
 
   return (
@@ -92,13 +101,19 @@ export function AlertBanner({ actions }: Props) {
           <b>{watchPos ? metres(distanceM(base, watchPos)) : '—'}</b>
           <span className="k">BPM</span>
           <b>{bpm != null ? Math.round(bpm) : '—'}</b>
-          {droneToTarget != null && rescue.stage !== 'idle' && rescue.stage !== 'alert' && (
-            <>
-              <span className="k">Drone → victim</span>
-              <b>{metres(droneToTarget)}</b>
-            </>
-          )}
         </div>
+        {flying && (
+          <div className="ab-progress">
+            <span className="k">To victim</span>
+            <b>{metres(droneToVictim)}</b>
+            <span className="k">GS</span>
+            <b>{fmt(gs, 1)} m/s</b>
+            <span className="k">ETA</span>
+            <b>{eta}</b>
+            <span className="k">Alt</span>
+            <b>{fmt(drone.relAltM, 1)} m</b>
+          </div>
+        )}
       </div>
 
       <ol className="ab-steps">
@@ -106,8 +121,8 @@ export function AlertBanner({ actions }: Props) {
           const i = ORDER.indexOf(s.stage);
           const cls = i < stageIdx ? 'done' : i === stageIdx ? 'current' : '';
           const label =
-            s.stage === 'enroute' && rescue.stage === 'enroute' && droneToTarget != null
-              ? `En route · ${metres(droneToTarget)}`
+            s.stage === 'enroute' && rescue.stage === 'enroute' && droneToVictim != null
+              ? `En route · ${metres(droneToVictim)}`
               : s.stage === 'ontarget'
                 ? `On target (≤${onTargetM} m)`
                 : s.label;
@@ -121,6 +136,7 @@ export function AlertBanner({ actions }: Props) {
 
       <div className="ab-actions">
         {actions}
+        <MuteButton className="ab-btn icon" />
         {alert && !alert.acknowledged && (
           <button className="ab-btn ack" onClick={acknowledgeAlert}>
             Acknowledge

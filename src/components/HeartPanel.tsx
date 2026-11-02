@@ -1,8 +1,9 @@
 import { config } from '../config';
 import { ago, fmt } from '../format';
-import { useNow } from '../hooks/useNow';
+import { useMemo } from 'react';
 import { fingerStatusText } from '../services/packetParser';
-import { useStore, validBpm } from '../store/useStore';
+import { live, recentSamples, validBpm } from '../store/live';
+import { useFrame } from '../store/ticker';
 import { TimeChart, type Series } from './TimeChart';
 
 const BPM_SERIES: Series[] = [{ key: 'bpm', label: 'BPM', color: '#2a78d6' }];
@@ -25,10 +26,11 @@ function Stat({ label, value, cls = '' }: { label: string; value: string; cls?: 
 }
 
 export function HeartPanel() {
-  const now = useNow(500);
-  const p = useStore((s) => s.watch.latest);
-  const samples = useStore((s) => s.watch.samples);
-  const stats = useStore((s) => s.stats);
+  const now = useFrame(8);
+  const p = live.watch.latest;
+  const version = live.samples.version;
+  const samples = useMemo(() => recentSamples(), [version]);
+  const stats = live.stats;
 
   const bpm = p ? validBpm(p) : null;
   const cls = bpmClass(bpm);

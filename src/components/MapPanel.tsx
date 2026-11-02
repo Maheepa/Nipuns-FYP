@@ -4,13 +4,15 @@ import type { LatLngExpression } from 'leaflet';
 import { create } from 'zustand';
 import { config, type LatLng } from '../config';
 import { destination, distanceM, fitZoomAroundCenter } from '../geo';
-import { metres } from '../format';
-import { useNow } from '../hooks/useNow';
+import { clock, metres } from '../format';
+import { live } from '../store/live';
+import { useFrame } from '../store/ticker';
 import { useStore } from '../store/useStore';
+import { askConfirm } from '../store/useUi';
+import { DroneControls } from './DroneControls';
 import { Hud } from './Hud';
 import { SimControls } from './SimControls';
 import { baseIcon, droneIcon, swimmerIcon, targetIcon, type SwimmerState } from './mapIcons';
-import { DroneControls } from './DroneControls';
 
 // Mouse position for the GEO readout lives in its own tiny store so mouse moves
 // re-render only the readout bar, not the markers.
@@ -25,15 +27,16 @@ interface ControllerProps {
   points: LatLng[];
   autoFit: boolean;
   manualZoom: number;
-  onFitZoom: (z: number | null) => void;
+  /** The user zoomed with the mouse wheel: switch to manual at this zoom. */
+  onUserZoom: (z: number) => void;
 }
 
 /**
  * Keeps the base station at the exact centre of the map and chooses the zoom:
- *  - auto: the highest zoom that keeps every marker inside the view (with padding)
- *  - manual: the +/- zoom, but never closer than the auto-fit (markers stay visible)
+ *  - auto-fit: the highest zoom that keeps every marker inside the view (with padding)
+ *  - manual (after +/- or the mouse wheel): the user's zoom, until Auto-fit is pressed
  */
-function CenterLockController({ base, points, autoFit, manualZoom, onFitZoom }: ControllerProps) {
+function CenterLockController({ base, points, autoFit, manualZoom, onUserZoom }: ControllerProps) {
   const map = useMap();
   const latest = useRef({ base, points, autoFit, manualZoom });
   latest.current = { base, points, autoFit, manualZoom };
@@ -45,19 +48,17 @@ function CenterLockController({ base, points, autoFit, manualZoom, onFitZoom }: 
     const size = map.getSize();
     if (size.x === 0 || size.y === 0) return;
 
-    const fit = fitZoomAroundCenter(base, points, size.x, size.y, config.map.autoZoomPaddingPx);
-    const fitSnapped = fit == null ? null : clampZoom(snapDown(Math.min(fit, MAX_AUTO_ZOOM)));
-    onFitZoom(fitSnapped);
-
     const current = map.getZoom();
     let target: number;
     if (autoFit) {
+      const fit = fitZoomAroundCenter(base, points, size.x, size.y, config.map.autoZoomPaddingPx);
+      const fitSnapped = fit == null ? null : clampZoom(snapDown(Math.min(fit, MAX_AUTO_ZOOM)));
       if (fitSnapped == null) target = config.map.defaultZoom;
       else if (fitSnapped < current) target = fitSnapped; // must zoom out to keep markers in view
       else if (fitSnapped - current >= 0.75) target = fitSnapped - config.map.zoomSnap; // zoom in, with margin
       else target = current; // hysteresis: avoid zoom jitter as markers move a little
     } else {
-      target = fitSnapped == null ? manualZoom : Math.min(manualZoom, fitSnapped);
+      target = manualZoom;
     }
     target = clampZoom(target);
 
@@ -75,25 +76,42 @@ function CenterLockController({ base, points, autoFit, manualZoom, onFitZoom }: 
     }
   };
 
-  // Re-apply when inputs change (markers move every second).
+  // Re-apply when inputs change (markers move).
   useEffect(() => {
     apply.current();
   });
 
-  // Snap back after anything moves the map, and re-centre on container resize.
   useEffect(() => {
+    const el = map.getContainer();
+    let wheelAt = 0;
+    const onWheel = () => {
+      wheelAt = Date.now();
+    };
+    // Leaflet fires zoomend before moveend: switch to manual first so the snap-back
+    // below keeps the user's wheel zoom instead of reverting it.
+    const onZoomEnd = () => {
+      if (Date.now() - wheelAt < 1000) {
+        const z = map.getZoom();
+        latest.current = { ...latest.current, autoFit: false, manualZoom: z };
+        onUserZoom(z);
+      }
+    };
     const snap = () => apply.current();
+    el.addEventListener('wheel', onWheel, { passive: true });
+    map.on('zoomend', onZoomEnd);
     map.on('moveend', snap);
     const ro = new ResizeObserver(() => {
       map.invalidateSize({ pan: false });
       apply.current();
     });
-    ro.observe(map.getContainer());
+    ro.observe(el);
     return () => {
+      el.removeEventListener('wheel', onWheel);
+      map.off('zoomend', onZoomEnd);
       map.off('moveend', snap);
       ro.disconnect();
     };
-  }, [map]);
+  }, [map, onUserZoom]);
 
   return null;
 }
@@ -118,22 +136,24 @@ function headingLine(pos: LatLng, heading: number, zoom: number): LatLngExpressi
   ];
 }
 
+/** Mission-Planner-style readout under the map. */
 function CoordBar({ base, autoFit }: { base: LatLng; autoFit: boolean }) {
   const { pos, zoom } = useCursor();
   const tileSource = useStore((s) => s.settings.tileSource);
   const setTileSource = useStore((s) => s.setTileSource);
-  const p = pos ?? base;
   return (
-    <div className="coord-bar">
+    <div className="coord-bar mono">
       <span className="geo-tag">GEO</span>
-      <span className="mono">
-        {p.lat.toFixed(7)} {p.lng.toFixed(7)}
+      <span className="coord">{pos ? `${pos.lat.toFixed(7)}  ${pos.lng.toFixed(7)}` : '—'}</span>
+      <span className="muted">BASE</span>
+      <span className="coord">
+        {base.lat.toFixed(7)}  {base.lng.toFixed(7)}
       </span>
-      <span className="muted">{pos ? 'cursor' : 'base station'}</span>
-      {pos && <span className="mono muted">{metres(distanceM(base, pos))} from base</span>}
+      <span className="muted">DIST</span>
+      <span className="coord">{pos ? metres(distanceM(base, pos)) : '—'}</span>
       <span className="spacer" />
       <span>
-        Zoom <b className="mono">{zoom.toFixed(2)}</b> {autoFit ? '(auto)' : '(manual)'}
+        Zoom <b>{zoom.toFixed(2)}</b> {autoFit ? 'auto' : 'manual'}
       </span>
       <label className="tiles-toggle" title="Offline tiles are served from /public/tiles (see README)">
         <input
@@ -147,51 +167,86 @@ function CoordBar({ base, autoFit }: { base: LatLng; autoFit: boolean }) {
   );
 }
 
+function secondsAgo(t: number | null, now: number): string {
+  return t == null ? 'never' : `${Math.max(0, Math.round((now - t) / 1000))}s ago`;
+}
+
 export function MapPanel() {
-  const now = useNow(1000);
+  // Markers and lines refresh at most 4 times a second, whatever the data rate.
+  const now = useFrame(4);
   const base = useStore((s) => s.settings.baseStation);
   const setBaseStation = useStore((s) => s.setBaseStation);
   const tileSource = useStore((s) => s.settings.tileSource);
-  const watchPos = useStore((s) => s.watch.position);
-  const watchStale = useStore((s) => s.watch.positionStale);
-  const lastPacketAt = useStore((s) => s.stats.lastPacketAt);
-  const drone = useStore((s) => s.drone);
+  const alertLevel = useStore((s) => s.alert?.level ?? null);
+  const alertId = useStore((s) => s.alert?.id ?? null);
+  const rescueStage = useStore((s) => s.rescue.stage);
+  const rescueTarget = useStore((s) => s.rescue.target);
+
+  const drone = live.drone;
+  const watchPos = live.watch.position;
+  const lastFixAt = live.watch.lastFixAt;
+  const lastPacketAt = live.stats.lastPacketAt;
 
   const [autoFit, setAutoFit] = useState(true);
   const [manualZoom, setManualZoom] = useState(config.map.defaultZoom);
-  const [fitZoom, setFitZoom] = useState<number | null>(null);
   const [ctx, setCtx] = useState<LatLng | null>(null);
   const [zoom, setZoom] = useState(config.map.defaultZoom);
   useEffect(() => useCursor.subscribe((s) => setZoom(s.zoom)), []);
 
+  // A new alert brings auto-fit back so the victim is in view.
+  useEffect(() => {
+    if (alertId != null) setAutoFit(true);
+  }, [alertId]);
+
+  const onUserZoom = useMemo(
+    () => (z: number) => {
+      setManualZoom(z);
+      setAutoFit(false);
+    },
+    [],
+  );
+
   const droneLive = drone.lastMsgAt != null && now - drone.lastMsgAt < config.bridge.telemetryTimeoutMs * 3;
   const dronePos = droneLive ? drone.position : null;
 
-  // Watch is "stale" with no fix, or when packets stopped arriving.
+  // Stale = last packet had no fix (NA), or no packet for more than 5 s.
   const packetsStale = lastPacketAt == null || now - lastPacketAt > config.serial.packetStaleMs;
-  const alertLevel = useStore((s) => s.alert?.level ?? null);
-  // An alert always wins (pulsing red/amber) — even on a last-known position.
+  const stale = live.watch.positionStale || packetsStale;
+  // An alert always wins (pulsing red/amber), even on a last-known position.
   const swimmerState: SwimmerState =
-    alertLevel === 'drowning' ? 'alert' : alertLevel === 'warning' ? 'warning' : watchStale || packetsStale ? 'stale' : 'normal';
+    alertLevel === 'drowning' ? 'alert' : alertLevel === 'warning' ? 'warning' : stale ? 'stale' : 'normal';
+  const swimmerTip = stale
+    ? `${alertLevel ? 'LAST KNOWN POSITION · ' : ''}Last fix ${lastFixAt ? clock(lastFixAt) : '—'} (${secondsAgo(lastFixAt, now)})`
+    : 'Swimmer · live';
 
-  const rescueStage = useStore((s) => s.rescue.stage);
-  const rescueTarget = useStore((s) => s.rescue.target);
   const flying = rescueStage === 'dispatched' || rescueStage === 'enroute' || rescueStage === 'ontarget';
+  const victim = watchPos ?? rescueTarget;
 
-  const points = useMemo(() => {
-    const pts: LatLng[] = [];
-    if (watchPos) pts.push(watchPos);
-    if (dronePos) pts.push(dronePos);
-    if (rescueTarget) pts.push(rescueTarget);
-    return pts;
-  }, [watchPos, dronePos, rescueTarget]);
+  const pointsKey = [watchPos, dronePos, rescueTarget].map((p) => (p ? `${p.lat.toFixed(6)},${p.lng.toFixed(6)}` : '-')).join('|');
+  // Re-fit only when a position really changes (not on every 4 Hz frame).
+  const points = useMemo(() => [watchPos, dronePos, rescueTarget].filter((p): p is LatLng => p != null), [pointsKey]);
 
   const zoomBy = (dz: number) => {
-    const current = useCursor.getState().zoom;
-    let z = clampZoom(current + dz);
-    if (fitZoom != null) z = Math.min(z, fitZoom);
-    setManualZoom(z);
+    setManualZoom(clampZoom(useCursor.getState().zoom + dz));
     setAutoFit(false);
+  };
+
+  const confirmBase = async (p: LatLng) => {
+    setCtx(null);
+    const ok = await askConfirm({
+      title: 'Move the base station here?',
+      confirmLabel: 'Set base station',
+      body: (
+        <p>
+          New position <b className="mono">{p.lat.toFixed(7)}, {p.lng.toFixed(7)}</b>, {metres(distanceM(base, p))} from the
+          current one. It is saved in this browser; distances and the max-distance limit use it. Reset it in Settings.
+        </p>
+      ),
+    });
+    if (ok) {
+      setBaseStation(p);
+      useStore.getState().logEvent({ kind: 'info', message: `Base station moved to ${p.lat.toFixed(7)}, ${p.lng.toFixed(7)}`, lat: p.lat, lng: p.lng });
+    }
   };
 
   return (
@@ -213,7 +268,7 @@ export function MapPanel() {
           zoomSnap={config.map.zoomSnap}
           zoomDelta={0.5}
           dragging={false}
-          scrollWheelZoom={false}
+          scrollWheelZoom="center"
           doubleClickZoom={false}
           touchZoom={false}
           boxZoom={false}
@@ -246,18 +301,12 @@ export function MapPanel() {
             />
           )}
 
-          <CenterLockController
-            base={base}
-            points={points}
-            autoFit={autoFit}
-            manualZoom={manualZoom}
-            onFitZoom={setFitZoom}
-          />
+          <CenterLockController base={base} points={points} autoFit={autoFit} manualZoom={manualZoom} onUserZoom={onUserZoom} />
           <MapEvents onContext={setCtx} />
 
           {/* drone GPS track (black, like Mission Planner) */}
-          {drone.track.length > 1 && (
-            <Polyline positions={drone.track} pathOptions={{ color: '#000', weight: 2.5, opacity: 0.9 }} />
+          {live.track.size > 1 && (
+            <Polyline positions={live.track.toArray()} pathOptions={{ color: '#000', weight: 2.5, opacity: 0.9 }} />
           )}
 
           {/* thin base → marker lines with distance labels */}
@@ -288,6 +337,28 @@ export function MapPanel() {
             </Polyline>
           )}
 
+          {/* rescue: dashed orange drone → victim line with the live distance (removed once delivered / cleared) */}
+          {flying && dronePos && victim && (
+            <Polyline
+              positions={[
+                [dronePos.lat, dronePos.lng],
+                [victim.lat, victim.lng],
+              ]}
+              pathOptions={{ color: '#ff6b1a', weight: 3, dashArray: '10 8' }}
+            >
+              <Tooltip permanent direction="center" className="dist-label rescue">
+                {metres(distanceM(dronePos, victim))} to victim
+              </Tooltip>
+            </Polyline>
+          )}
+          {rescueTarget && flying && (
+            <Marker position={[rescueTarget.lat, rescueTarget.lng]} icon={targetIcon} zIndexOffset={100}>
+              <Tooltip direction="bottom" offset={[0, 12]}>
+                Drone go-to target
+              </Tooltip>
+            </Marker>
+          )}
+
           <Marker position={[base.lat, base.lng]} icon={baseIcon} zIndexOffset={-100}>
             <Tooltip direction="top" offset={[0, -16]}>
               Base station
@@ -297,25 +368,7 @@ export function MapPanel() {
           {watchPos && (
             <Marker position={[watchPos.lat, watchPos.lng]} icon={swimmerIcon(swimmerState)} zIndexOffset={200}>
               <Tooltip direction="top" offset={[0, -16]}>
-                Swimmer {swimmerState === 'stale' ? '(last known position)' : ''}
-              </Tooltip>
-            </Marker>
-          )}
-
-          {/* rescue: dashed orange drone → victim line and the go-to target */}
-          {flying && dronePos && (rescueTarget ?? watchPos) && (
-            <Polyline
-              positions={[
-                [dronePos.lat, dronePos.lng],
-                [(rescueTarget ?? watchPos)!.lat, (rescueTarget ?? watchPos)!.lng],
-              ]}
-              pathOptions={{ color: '#ff6b1a', weight: 3, dashArray: '10 8' }}
-            />
-          )}
-          {rescueTarget && rescueStage !== 'idle' && (
-            <Marker position={[rescueTarget.lat, rescueTarget.lng]} icon={targetIcon} zIndexOffset={100}>
-              <Tooltip direction="bottom" offset={[0, 12]}>
-                Drone go-to target
+                {swimmerTip}
               </Tooltip>
             </Marker>
           )}
@@ -337,22 +390,7 @@ export function MapPanel() {
                 <div className="mono">
                   {ctx.lat.toFixed(7)}, {ctx.lng.toFixed(7)}
                 </div>
-                <button
-                  onClick={() => {
-                    setBaseStation(ctx);
-                    setCtx(null);
-                  }}
-                >
-                  Set base station here
-                </button>
-                <button
-                  onClick={() => {
-                    setBaseStation(null);
-                    setCtx(null);
-                  }}
-                >
-                  Reset base station to default
-                </button>
+                <button onClick={() => void confirmBase(ctx)}>Set base station here</button>
               </div>
             </Popup>
           )}
@@ -362,14 +400,18 @@ export function MapPanel() {
         <DroneControls />
 
         <div className="zoom-ctl">
-          <button onClick={() => zoomBy(0.5)} disabled={fitZoom != null && zoom >= fitZoom - 1e-6} title="Zoom in">
+          <button onClick={() => zoomBy(0.5)} disabled={zoom >= config.map.maxZoom} title="Zoom in (stays centred on the base station)">
             +
           </button>
-          <button onClick={() => zoomBy(-0.5)} disabled={zoom <= config.map.minZoom} title="Zoom out">
+          <button onClick={() => zoomBy(-0.5)} disabled={zoom <= config.map.minZoom} title="Zoom out (stays centred on the base station)">
             −
           </button>
-          <button className={autoFit ? 'on' : ''} onClick={() => setAutoFit(true)} title="Auto-zoom to keep swimmer and drone in view">
-            AUTO
+          <button
+            className={`fit ${autoFit ? 'on' : ''}`}
+            onClick={() => setAutoFit(true)}
+            title="Auto-fit: keep the swimmer and the drone in view. Paused after a manual zoom."
+          >
+            Auto-fit
           </button>
         </div>
       </div>

@@ -169,3 +169,33 @@ describe('finger status text', () => {
     expect(fingerStatusText(7)).toBe('Unknown (7)');
   });
 });
+
+describe('more receiver cases', () => {
+  it('parses a full RX line with RSSI -87 and SNR 9.5', () => {
+    const p = packetOf(`RX|${DATA}|RSSI:-87|SNR:9.5`);
+    expect(p).toMatchObject({ type: 'DATA', bpm: 72, rssi: -87, snr: 9.5, stat: 3 });
+  });
+
+  it.each([
+    ['cut inside a value', 'RX|DATA|BPM:72|SPO2:98|CONF:9'], // RX wrapper lost with the tail
+    ['cut after a colon', 'DATA|BPM:72|SPO2:98|CONF:'],
+    ['cut inside a key', 'DATA|BPM:72|SPO2:98|CO'],
+    ['cut inside LAT', 'DATA|BPM:72|LAT:6.81'],
+  ])('rejects a truncated packet (%s)', (_label, line) => {
+    expect(parseSerialLine(line).kind).toBe('bad');
+  });
+
+  it('reads the 50 Hz motion summary when present', () => {
+    const p = packetOf(`${DATA}|AMAX:23.45|ASTD:1.20|GMAX:345.60|N:50`);
+    expect(p).toMatchObject({ amax: 23.45, astd: 1.2, gmax: 345.6, n: 50, stat: 3 });
+    expect(p.extra).toEqual({});
+  });
+
+  it('leaves the summary null for older firmware', () => {
+    expect(packetOf(DATA)).toMatchObject({ amax: null, astd: null, gmax: null, n: null });
+  });
+
+  it('ignores a # debug line even if it looks like a packet', () => {
+    expect(parseSerialLine('# DATA|BPM:72').kind).toBe('ignored');
+  });
+});

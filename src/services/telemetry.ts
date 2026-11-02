@@ -1,6 +1,7 @@
 // Single entry point for receiver lines. Both the real serial port and the
 // simulator feed raw text through here, so simulation exercises the real parser.
 
+import { countBad, ingestPacket } from '../store/live';
 import { useStore } from '../store/useStore';
 import type { WatchPacket } from '../types';
 import { parseSerialLine } from './packetParser';
@@ -19,7 +20,7 @@ export function handleSerialLine(line: string, now = Date.now()): void {
   const store = useStore.getState();
   switch (r.kind) {
     case 'packet':
-      store.ingestPacket(r.packet, now);
+      ingestPacket(r.packet, now);
       for (const fn of packetListeners) fn(r.packet, now);
       break;
     case 'ready':
@@ -29,7 +30,7 @@ export function handleSerialLine(line: string, now = Date.now()): void {
       store.setLink({ lastHbAt: now });
       break;
     case 'bad':
-      store.countBad();
+      countBad();
       if (import.meta.env.DEV) console.debug('[lora] bad line:', r.reason, JSON.stringify(r.raw));
       break;
     case 'ignored':

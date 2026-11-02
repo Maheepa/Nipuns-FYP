@@ -1,7 +1,8 @@
 // Alert pipeline: Type 1 (ALERT packet from the watch button) and Type 2 (detector).
 
 import { config } from '../config';
-import { useStore, validBpm } from '../store/useStore';
+import { live, recentSamples, validBpm } from '../store/live';
+import { useStore } from '../store/useStore';
 import type { LogEvent, WatchPacket } from '../types';
 import { getDetector } from './detection';
 import { onPacket } from './telemetry';
@@ -9,7 +10,7 @@ import { onPacket } from './telemetry';
 let clearedAt = 0;
 
 function vitals(p: WatchPacket): Partial<LogEvent> {
-  const pos = useStore.getState().watch.position;
+  const pos = live.watch.position;
   return { lat: pos?.lat ?? null, lng: pos?.lng ?? null, bpm: validBpm(p), spo2: p.spo2 || null, conf: p.conf };
 }
 
@@ -29,7 +30,7 @@ function handlePacket(p: WatchPacket, now: number) {
   }
 
   // ---- Type 2: automatic detection on every packet
-  const samples = useStore.getState().watch.samples;
+  const samples = recentSamples(undefined, now);
   const last = samples[samples.length - 1];
   if (!last) return;
   const r = getDetector().evaluate(last, samples);

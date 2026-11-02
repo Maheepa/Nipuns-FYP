@@ -15,6 +15,7 @@ import { initAlerts } from './services/alerts';
 import { startDroneSocket } from './services/droneSocket';
 import { connectLora, disconnectLora, webSerialSupported } from './services/loraSerial';
 import { initRescueTracker } from './services/rescue';
+import { startTicker } from './store/ticker';
 import { useStore } from './store/useStore';
 
 export default function App() {
@@ -22,11 +23,12 @@ export default function App() {
   const linkStatus = useStore((s) => s.link.status);
   const alarmOn = useStore((s) => !!s.alert && !s.alert.acknowledged && !s.settings.muted);
   const [logOpen, setLogOpen] = useState(false);
+  const [serialBannerClosed, setSerialBannerClosed] = useState(false);
 
   useEffect(() => {
     if (!webSerialSupported()) useStore.getState().setLink({ status: 'unsupported' });
     unlockAudioOnFirstGesture();
-    const stops = [initAlerts(), startDroneSocket(), initRescueTracker()];
+    const stops = [startTicker(), initAlerts(), startDroneSocket(), initRescueTracker()];
     useStore.getState().logEvent({ kind: 'info', message: 'Base station started (dry-run ON)' });
     return () => stops.forEach((stop) => stop());
   }, []);
@@ -37,10 +39,13 @@ export default function App() {
     <div className="app">
       <Header onConnect={connectLora} onDisconnect={disconnectLora} onOpenLog={() => setLogOpen(true)} />
       <div className="banners">
-        {linkStatus === 'unsupported' && (
-          <div className="banner unsupported">
-            ⚠ This browser has no Web Serial API, so the LoRa receiver cannot be connected. Open the app in
-            Chrome or Edge at http://localhost:5173. Simulation mode still works.
+        {linkStatus === 'unsupported' && !serialBannerClosed && (
+          <div className="banner unsupported" role="status">
+            <span>⚠ LoRa connection needs Chrome or Edge on localhost.</span>
+            <span className="muted">Simulation mode still works in this browser.</span>
+            <button className="banner-close" onClick={() => setSerialBannerClosed(true)} aria-label="Dismiss">
+              ✕
+            </button>
           </div>
         )}
         <AlertBanner actions={<RescueActions />} />

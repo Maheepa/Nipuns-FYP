@@ -258,7 +258,7 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   box-shadow: 0 3px 8px rgba(0,0,0,0.5);
 }
 .mk-swimmer svg { position: relative; }
-.mk-swimmer.stale { background: #8b97a6; border-color: #dfe5ec; opacity: 0.85; }
+.mk-swimmer.stale { background: #8b97a6; border-color: #dfe5ec; opacity: 0.5; }
 .mk-swimmer.warning { background: var(--warn); }
 .mk-swimmer.alert { background: var(--danger); }
 .mk-swimmer .pulse { display: none; }
@@ -530,3 +530,39 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .dc-buttons { display: flex; gap: 4px; flex-wrap: wrap; }
 .dc-buttons button.danger { background: rgba(179, 18, 26, 0.9); }
 .dc-buttons button.icon { font-size: 14px; padding: 4px 9px; }
+
+/* ============================================================ status chips, banner close, progress (update) */
+.chip-label { color: #9fc3dd; font-weight: 700; margin-right: 1px; }
+.chip-label::after { content: ' ·'; }
+.chip-btn { cursor: pointer; color: #fff; font: inherit; font-size: 12.5px; font-weight: 800; letter-spacing: 0.3px; }
+.chip-btn.dry { background: var(--warn); border-color: #ffd36b; color: #2a1d00; }
+.chip-btn.live { background: var(--danger); border-color: #ff8a8f; }
+.hbtn.icon { font-size: 15px; padding: 3px 8px; }
+.tip-wrap { display: inline-flex; }
+/* let hover reach the wrapper so its tooltip shows for disabled buttons */
+.tip-wrap > button:disabled { pointer-events: none; }
+.connect-info .meta:first-child { font-weight: 600; color: #fff; }
+
+.banner { justify-content: flex-start; }
+.banner .muted { font-weight: 500; opacity: 0.8; }
+.banner-close {
+  margin-left: auto; border: none; background: transparent; font-size: 16px; font-weight: 800;
+  color: inherit; padding: 0 6px; border-radius: 4px;
+}
+.banner-close:hover { background: rgba(0,0,0,0.08); }
+
+.ab-progress { margin-top: 2px; padding: 2px 8px; border-radius: 6px; background: rgba(0,0,0,0.22); display: inline-flex; align-items: baseline; }
+.ab-progress .k:first-child { margin-left: 0; }
+.ab-btn.icon { padding: 5px 9px; font-size: 15px; }
+
+.leaflet-tooltip.dist-label.rescue { background: var(--orange); color: #fff; }
+.zoom-ctl { align-items: flex-end; }
+.zoom-ctl button.fit { width: 62px; font-size: 11px; letter-spacing: 0.2px; height: 30px; white-space: nowrap; }
+
+.coord-bar.mono { font-family: Consolas, 'SFMono-Regular', ui-monospace, monospace; font-size: 12px; background: #11181f; }
+.coord-bar .coord { color: #e6edf3; white-space: pre; }
+.coord-bar .geo-tag { font-family: inherit; }
+.coord-bar .tiles-toggle { font-family: 'Inter', system-ui, sans-serif; }
+
+.base-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+.base-row .mono { font-size: 12.5px; color: var(--muted); }

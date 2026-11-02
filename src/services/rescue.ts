@@ -10,6 +10,7 @@
 import type { LatLng } from '../config';
 import { distanceM } from '../geo';
 import { metres } from '../format';
+import { live, onDroneUpdate } from '../store/live';
 import { useStore } from '../store/useStore';
 import { toast } from '../store/useUi';
 import { describeCommand, type DroneCommand } from './droneCommands';
@@ -123,7 +124,7 @@ export async function releaseRing(): Promise<void> {
   if (outcome === 'sent') {
     const st = useStore.getState();
     st.setRescue({ stage: 'delivered' });
-    st.logEvent({ kind: 'rescue', message: 'Life ring released', lat: st.drone.position?.lat, lng: st.drone.position?.lng });
+    st.logEvent({ kind: 'rescue', message: 'Life ring released', lat: live.drone.position?.lat, lng: live.drone.position?.lng });
   }
 }
 
@@ -151,27 +152,27 @@ export function finishRescue(reason = 'Rescue closed by operator'): void {
  */
 export function initRescueTracker(): () => void {
   let startDist: number | null = null;
-  const unsubStore = useStore.subscribe((s, prev) => {
-    if (s.drone === prev.drone) return;
+  const unsubDrone = onDroneUpdate((drone, prev) => {
+    const s = useStore.getState();
     const { stage, target } = s.rescue;
-    const pos = s.drone.position;
+    const pos = drone.position;
     if (!pos) return;
 
     if ((stage === 'dispatched' || stage === 'enroute') && target) {
       const d = distanceM(pos, target);
       if (stage === 'dispatched') startDist ??= d;
-      if (d <= s.settings.rescue.onTargetRadiusM && (s.drone.relAltM ?? 0) > 1) {
+      if (d <= s.settings.rescue.onTargetRadiusM && (drone.relAltM ?? 0) > 1) {
         s.setRescue({ stage: 'ontarget' });
         s.logEvent({ kind: 'rescue', message: `Drone on target (${metres(d)} from victim)`, lat: pos.lat, lng: pos.lng });
         toast('Drone is over the victim — release the life ring', 'ok', 8000);
         startDist = null;
-      } else if (stage === 'dispatched' && ((s.drone.groundSpeed ?? 0) > 1 || (startDist != null && startDist - d > 3))) {
+      } else if (stage === 'dispatched' && ((drone.groundSpeed ?? 0) > 1 || (startDist != null && startDist - d > 3))) {
         s.setRescue({ stage: 'enroute' });
         s.logEvent({ kind: 'rescue', message: `Drone en route, ${metres(d)} to go` });
       }
     }
 
-    if (stage === 'returning' && prev.drone.armed && !s.drone.armed) {
+    if (stage === 'returning' && prev.armed && !drone.armed) {
       finishRescue('Drone landed and disarmed — rescue complete');
     }
   });
@@ -185,7 +186,7 @@ export function initRescueTracker(): () => void {
   });
 
   return () => {
-    unsubStore();
+    unsubDrone();
     unsubAck();
   };
 }

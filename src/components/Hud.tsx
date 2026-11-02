@@ -1,6 +1,7 @@
 import { config } from '../config';
 import { fmt } from '../format';
-import { useNow } from '../hooks/useNow';
+import { live } from '../store/live';
+import { useFrame } from '../store/ticker';
 import { useStore } from '../store/useStore';
 
 const FIX_TEXT: Record<number, string> = {
@@ -15,13 +16,13 @@ const FIX_TEXT: Record<number, string> = {
 
 /** Mission-Planner-style status overlay in the corner of the map. */
 export function Hud() {
-  const now = useNow(1000);
-  const d = useStore((s) => s.drone);
+  const now = useFrame(8);
+  const d = live.drone;
   const link = useStore((s) => s.droneLink);
-  const live = d.lastMsgAt != null && now - d.lastMsgAt < config.bridge.telemetryTimeoutMs;
-  const lastText = d.statusTexts[d.statusTexts.length - 1];
+  const fresh = d.lastMsgAt != null && now - d.lastMsgAt < config.bridge.telemetryTimeoutMs;
+  const lastText = live.statusTexts.last();
 
-  if (!live) {
+  if (!fresh) {
     return (
       <div className="hud">
         <div className="hud-arm nodata">NO DRONE DATA</div>

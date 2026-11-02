@@ -16,6 +16,15 @@ export interface WatchPacket {
   gx: number | null;
   gy: number | null;
   gz: number | null;
+  /** Per-second motion summary from the 50 Hz watch firmware (null on older firmware). */
+  /** Strongest |a| in the last second, m/s². */
+  amax: number | null;
+  /** Spread (std. deviation) of the acceleration vector over the last second, m/s². */
+  astd: number | null;
+  /** Strongest |ω| in the last second, °/s. */
+  gmax: number | null;
+  /** Number of IMU samples behind AMAX/ASTD/GMAX. */
+  n: number | null;
   /** null when the field is missing or NA (no GPS fix). */
   lat: number | null;
   lng: number | null;
@@ -40,6 +49,9 @@ export interface Sample {
   gx: number | null;
   gy: number | null;
   gz: number | null;
+  amax: number | null;
+  astd: number | null;
+  gmax: number | null;
   /** null when there is no valid reading (BPM 0 or CONF 0). */
   bpm: number | null;
   conf: number | null;
@@ -47,8 +59,6 @@ export interface Sample {
 }
 
 export type LinkStatus = 'unsupported' | 'disconnected' | 'connecting' | 'connected' | 'error';
-
-export type DroneLinkState = 'down' | 'nodata' | 'ok';
 
 export interface StatusText {
   t: number;
@@ -75,8 +85,6 @@ export interface DroneState {
   climb: number | null;
   batteryV: number | null;
   batteryPct: number | null;
-  track: [number, number][];
-  statusTexts: StatusText[];
 }
 
 export type AlertSource = 'button' | 'detection';

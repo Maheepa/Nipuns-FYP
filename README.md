@@ -49,7 +49,7 @@ Open **http://localhost:5173** in Chrome or Edge.
   The simulator sends fake watch packets through the real parser and runs a simulated drone.
   Pick a scenario next to the map (normal swimming, struggling, motionless, no GPS, sensor off wrist)
   or press **Fire ALERT** to send an emergency-button packet. `?sim=1&scenario=struggling` starts in a scenario.
-- `npm run dev:web` starts only the web app; `npm run bridge` starts only the bridge.
+- `npm run dev:web` starts only the web app; `npm run dev:bridge` starts only the bridge; `npm run sim:drone` starts a fake drone for the bridge.
 
 ## Receiver hardware and wiring
 
@@ -97,6 +97,10 @@ The radio settings match the watch: 433 MHz and the library defaults for spreadi
 
 Watch packets (`DATA|...` every second, `ALERT|...` on the emergency button) are parsed **by key**, so new fields or a different order do not break anything. `LAT:NA` / `LNG:NA` means no GPS fix: the app keeps the last known position and marks it stale. `BPM:0` or `CONF:0` means no valid heart-rate reading. Malformed lines are counted as *bad packets*.
 
+Optional fields from the 50 Hz watch firmware, appended at the end: `AMAX` (strongest \|a\| in the last second, m/s²), `ASTD` (spread of the acceleration vector over that second), `GMAX` (strongest rotation, °/s) and `N` (number of IMU samples). When they are present, detection uses them; when they are missing (older firmware), it falls back to the instant `AX..GZ` values.
+
+**Receiver vs watch health.** The LoRa chip reflects the receiver itself: *Receiver ready* after `READY|LORA_OK` or a heartbeat, *Receiver LoRa failed* after `READY|LORA_FAIL` (check the wiring), *Receiver silent* when no `HB` line arrived for 12 s. The Watch chip is separate: *Live*, *No GPS* (`LAT:NA`), or *Stale* when no packet arrived for 5 s while the receiver is still alive.
+
 ## Connecting the receiver (Chrome / Edge)
 
 The app reads the receiver with the **Web Serial API**, which only exists in **Chrome and Edge** and only on a secure origin — `http://localhost` counts, a LAN IP address does not. Firefox and Safari show a warning banner (simulation still works there).
@@ -125,7 +129,7 @@ The mirror dialog differs between Mission Planner builds. If your build only off
 
 ```bash
 # PowerShell
-$env:BRIDGE_MAV_REMOTE="127.0.0.1:14550"; npm run bridge
+$env:BRIDGE_MAV_REMOTE="127.0.0.1:14550"; npm run dev:bridge
 ```
 
 ### Bridge options (environment variables)
@@ -144,8 +148,8 @@ The WebSocket only accepts connections from `localhost` pages, so no other websi
 ### Test the bridge without a drone
 
 ```bash
-npm run bridge          # terminal 1
-npm run fake-vehicle    # terminal 2: pretends to be Mission Planner + APM
+npm run dev:bridge      # terminal 1
+npm run sim:drone       # terminal 2: pretends to be Mission Planner + APM
 npm run bridge:smoke    # terminal 3: sends a dry-run, a refused and a live command
 ```
 
@@ -166,12 +170,12 @@ npm run bridge:smoke    # terminal 3: sends a dry-run, a refused and a live comm
 
 **Layout.** Header with status chips and Connect (top). Satellite map (top half) with the base station locked at the exact centre. Bottom-left is a reserved, empty panel (`<ReservedPanel />`); bottom-right shows the MPU-6050 accelerometer/gyroscope charts and the MAX32664 heart-rate panel (last 60 s).
 
-**Map.** The base station never moves from the centre; the zoom adjusts automatically so the swimmer and the drone stay visible (**AUTO**). **+ / −** zoom manually around the centre, but never so close that a marker leaves the view. Right-click → *Set base station here* (saved in this browser). Lines: black drone GPS track, red drone heading, dashed base→marker lines with distances, dashed orange drone→victim line during a rescue. The bar under the map shows the cursor position (`GEO lat lng`) like Mission Planner.
+**Map.** The base station never moves from the centre and the map cannot be dragged. With **Auto-fit** on, the zoom adjusts so the swimmer and the drone stay visible. **+ / −** and the mouse wheel zoom around the centre; a manual zoom pauses Auto-fit until you press **Auto-fit** again, and a new alert turns it back on. Right-click → *Set base station here* (asks for confirmation, saved in this browser; *Reset base station to default* is in ⚙ Settings). A stale swimmer (no GPS fix, or no packet for 5 s) is drawn grey and half-transparent with its last fix time; during an alert it stays red and pulsing, labelled *LAST KNOWN POSITION*. Lines: black drone GPS track, red drone heading, dashed base→marker lines with distances, and during a rescue a dashed orange drone→victim line labelled with the live distance. The dark bar under the map shows `GEO lat lng` of the mouse, the base station position and the distance between them, like Mission Planner.
 
 **Alerts.**
 - *Type 1 — emergency button:* an `ALERT` packet immediately shows the red banner, sounds the alarm and makes the swimmer marker pulse.
 - *Type 2 — automatic detection:* threshold rules raise *Possible drowning* (one rule) or *Drowning detected* (two or more rules).
-- **Acknowledge** silences the alarm; **Clear alert** closes it (automatic detection cannot re-raise it for 30 s; the emergency button always can). **🔊 Sound** mutes the alarm entirely. The browser only plays sound after the first click on the page.
+- **Acknowledge** silences the alarm; **Clear alert** closes it (automatic detection cannot re-raise it for 30 s; the emergency button always can). The **🔊** button (header and alert banner) mutes the alarm; the choice is remembered, and muting never hides the banner. A new alert after an acknowledge sounds again unless muted. The browser only plays sound after the first click on the page.
 
 **Rescue flow** (buttons appear in the banner as the rescue progresses):
 
@@ -182,7 +186,7 @@ npm run bridge:smoke    # terminal 3: sends a dry-run, a refused and a live comm
 3. If the swimmer drifts, **Update target** re-sends the go-to.
 4. **Release life ring** (DO_SET_SERVO) → **Return to launch**. When the drone lands and disarms the rescue closes automatically, or press **Finish rescue**.
 
-**Dry-run / LIVE.** The **DRY-RUN ON** button in the header is on at every start. In dry-run each command is still validated and encoded by the bridge (the hex frame goes into the log) but nothing is sent. Switching to **LIVE** needs a confirmation with a checklist. Turning *Simulate* off always switches dry-run back on.
+**Dry-run / LIVE.** The **Dry-run ON** chip in the header (amber; red **OFF** = live) is on at every start. In dry-run each command is still validated and encoded by the bridge (the hex frame goes into the log) but nothing is sent. Switching to **LIVE** needs a confirmation with a checklist. Turning *Simulate* off always switches dry-run back on.
 
 **Settings (⚙ in Drone controls).** Rescue altitude, max distance from the base station, on-target radius, release servo channel and PWM values. Saved in this browser; defaults come from `src/config.ts`.
 
@@ -277,7 +281,8 @@ src/
                 RescueActions, DroneControls, SettingsDialog, ConfirmHost, EventLog, …
   services/     loraSerial.ts  packetParser.ts  telemetry.ts  simulator.ts  detection.ts
                 alerts.ts  alarm.ts  droneSocket.ts  droneSim.ts  rescue.ts  eventLog.ts
-  store/        useStore.ts (watch, drone, links, alerts, rescue, events)  useUi.ts
+  store/        live.ts + ringBuffer.ts (high-rate telemetry, not React state)  ticker.ts (one 8 Hz UI loop)
+                useStore.ts (links, settings, alerts, rescue, events)  useUi.ts
   config.ts
 bridge/         server.js (UDP ↔ WebSocket)  mavlink.js (v1/v2 codec)  commands.js
                 fake-vehicle.js  smoke-test.js
@@ -288,7 +293,8 @@ scripts/        download-tiles.js
 
 ## Known limitations
 
-- **1 Hz IMU sampling.** The watch sends one accelerometer/gyro sample per second, so short spikes between samples are missed. Sending a per-second peak or variance from the watch would make motion detection much more reliable.
+- **IMU sampling.** The current watch firmware sends one accelerometer/gyro sample per second, so short spikes between samples are missed. The proposed 50 Hz firmware change adds per-second AMAX/ASTD/GMAX; the app already uses them when present.
+- **Performance.** Packets and MAVLink messages go into ring buffers outside React. The panels redraw at most 8 times a second and the map markers at most 4 times a second from one shared ticker; chart animations are off.
 - **SpO₂** is shown as "—" when the hub reports 0, which the real watch did in every logged packet (proposal slide 26). It is not used for detection.
 - **Go-to precision.** ArduCopter 3.2.1 takes the GUIDED target as `MISSION_ITEM`, whose coordinates are 32-bit floats: the position is rounded to about 1 m.
 - **ArduCopter 3.2.1 behaviour** (GUIDED take-off, `MISSION_ITEM current=2`, servo numbering on the APM) follows the 3.2 documentation and must be confirmed on the bench.

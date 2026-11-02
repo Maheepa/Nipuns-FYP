@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { runCommands } from '../services/rescue';
+import { live } from '../store/live';
+import { useFrame } from '../store/ticker';
 import { useStore } from '../store/useStore';
 import { askConfirm, useUi } from '../store/useUi';
 
@@ -12,7 +14,12 @@ const ARM_CHECKLIST = [
 /** Manual drone controls overlay (bottom-left of the map). Every button asks for confirmation. */
 export function DroneControls() {
   const [open, setOpen] = useState(false);
-  const drone = useStore((s) => s.drone);
+  useFrame(2);
+  const drone = live.drone;
+  const stage = useStore((s) => s.rescue.stage);
+  // During a rescue the ring may only drop On target; with no rescue running it stays
+  // available for bench-testing the servo.
+  const releaseAllowed = stage === 'idle' || stage === 'alert' || stage === 'ontarget';
   const setSettingsOpen = useUi((s) => s.setSettingsOpen);
 
   const run = async (title: string, body: string, label: string, cmds: Parameters<typeof runCommands>[1], danger = false, checklist?: string[]) => {
@@ -56,6 +63,8 @@ export function DroneControls() {
             TAKEOFF
           </button>
           <button
+            disabled={!releaseAllowed}
+            title={releaseAllowed ? '' : 'During a rescue the ring can only be released On target'}
             onClick={() =>
               run(
                 'Release the life ring?',

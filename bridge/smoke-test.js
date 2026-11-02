@@ -1,6 +1,6 @@
 // End-to-end check: connects to the running bridge like the web app does, waits for
 // telemetry from the fake vehicle, then sends one dry-run and one live command.
-//   npm run bridge  &  node bridge/fake-vehicle.js  &  node bridge/smoke-test.js
+//   npm run dev:bridge  &  npm run sim:drone  &  npm run bridge:smoke
 
 import WebSocket from 'ws';
 

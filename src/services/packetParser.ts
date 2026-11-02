@@ -26,7 +26,8 @@ const NUM_RE = /^-?\d+(\.\d+)?$/;
 const KEY_RE = /^[A-Z][A-Z0-9_]*$/;
 const RX_RE = /^RX\|(.*)\|RSSI:(-?\d+)\|SNR:(-?\d+(?:\.\d+)?)$/;
 
-const NUMERIC_KEYS = ['BPM', 'SPO2', 'CONF', 'AX', 'AY', 'AZ', 'GX', 'GY', 'GZ', 'STAT'] as const;
+// AMAX/ASTD/GMAX/N: per-second motion summary from the 50 Hz watch firmware (optional).
+const NUMERIC_KEYS = ['BPM', 'SPO2', 'CONF', 'AX', 'AY', 'AZ', 'GX', 'GY', 'GZ', 'STAT', 'AMAX', 'ASTD', 'GMAX', 'N'] as const;
 type NumericKey = (typeof NUMERIC_KEYS)[number];
 const KNOWN_KEYS = new Set<string>([...NUMERIC_KEYS, 'LAT', 'LNG']);
 
@@ -111,6 +112,10 @@ export function parsePacket(text: string, rssi: number | null = null, snr: numbe
       gx: n('GX'),
       gy: n('GY'),
       gz: n('GZ'),
+      amax: n('AMAX'),
+      astd: n('ASTD'),
+      gmax: n('GMAX'),
+      n: n('N'),
       lat,
       lng,
       gpsNoFix,
