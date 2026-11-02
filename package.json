@@ -1,0 +1,40 @@
+{
+  "name": "beach-safety-base-station",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Base-station web app: wearable drowning detection with autonomous drone rescue",
+  "scripts": {
+    "dev": "concurrently -n web,bridge -c cyan,magenta \"npm:dev:web\" \"npm:bridge\"",
+    "dev:web": "vite",
+    "bridge": "node bridge/server.js",
+    "fake-vehicle": "node bridge/fake-vehicle.js",
+    "bridge:smoke": "node bridge/smoke-test.js",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "tiles": "node scripts/download-tiles.js"
+  },
+  "dependencies": {
+    "leaflet": "^1.9.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-leaflet": "^4.2.1",
+    "recharts": "^2.13.3",
+    "ws": "^8.18.0",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@types/leaflet": "^1.9.14",
+    "@types/node": "^22.9.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/w3c-web-serial": "^1.0.7",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.5"
+  }
+}
